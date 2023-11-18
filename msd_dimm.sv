@@ -7,20 +7,15 @@ module msd_dimm;
   logic[35:0]address;
   int time_unit;
   int rowCounter,last_line;
-  int pos=0; 
   bit read,write,inst_fetch;
   string ip_file;
   string op_file;
   int debug_en;
-  longint unsigned q_ip_time[$]; //input queue for request time
-  int q_ip_oper[$]; //input queue for operation
-  logic [35:0] q_ip_addr[$]; //input queue for address
-  longint unsigned str; //string to store the contents of the file
-  logic [37:0] q_mc[$:15], local_var,q_out_temp; //q_mc -> [37:36] operation; [35:0] address
-  longint unsigned sim_time =1, last, remove[$];
-  //Simulation time, last (to complete the last transfer), remove (queue to store the request time)
-  // Max value = 18446744073709551615
-  int s, a, count;
+  longint unsigned q_ip_time[$];                  //input queue for request time
+  int q_ip_oper[$];                               //input queue for operation
+  logic [35:0] q_ip_addr[$];                      //input queue for address
+  logic [37:0] q_mc[$:15], local_var,q_out_temp;  //q_mc -> [37:36] operation; [35:0] address
+  longint unsigned sim_time =1;                   //Simulation time,  // Max value = 18446744073709551615
   int sim_t;
   int q_full,q_empty;
   bit [1:0] dimm_count;
@@ -31,31 +26,41 @@ module msd_dimm;
        local_var = {q_ip_oper.pop_front(), q_ip_addr.pop_front()};
        if (debug_en)
           q_mc.push_back(local_var);
-          remove.push_back(sim_time);
           $display(">>>@time:%t Adding new element to the queue.. %h ... at sim_time = %0d --> q_mc.size = %0d\n",$time, local_var, sim_time, q_mc.size()); 
           display_q; 
   endtask
 
   task output_command(input[37:0] q_out_temp);
-       $display("%t \t channel ACT0 bankg=%d bank=%d row =%d",$time,q_out_temp[9:7],q_out_temp[11:10],q_out_temp[33:18]);
-       $display("%t \t channel ACT1 bankg=%d bank=%d row=%d",$time,q_out_temp[9:7],q_out_temp[11:10],q_out_temp[33:18]);
-       $display("%t \t channel RD0 bankg=%d bank=%d column=%d",$time,q_out_temp[9:7],q_out_temp[11:10],q_out_temp[17:12]);
-       $display("%t \t channel RD1 bankg=%d bank=%d column=%d",$time,q_out_temp[9:7],q_out_temp[11:10],q_out_temp[17:12]);
-       $display("%t \t channel PRE bankg=%d bank=%d ",$time,q_out_temp[9:7],q_out_temp[11:10]);
+       if (q_out_temp[37:36] == 0 || q_out_temp[37:36] == 1) begin //Read operation. mem controller point of view instruction fetch is also read.
+          $display("\t\t*********Read operation********* Value of operation=%0d",q_out_temp[37:36]);
+          $display("%t \t channel=%d ACT0 bankg=%d bank=%d row =%d",$time,q_out_temp[6],q_out_temp[9:7],q_out_temp[11:10],q_out_temp[33:18]);
+          $display("%t \t channel=%d ACT1 bankg=%d bank=%d row=%d",$time,q_out_temp[6],q_out_temp[9:7],q_out_temp[11:10],q_out_temp[33:18]);
+          $display("%t \t channel=%d RD0 bankg=%d bank=%d column=%d",$time,q_out_temp[6],q_out_temp[9:7],q_out_temp[11:10],q_out_temp[17:12]);
+          $display("%t \t channel=%d RD1 bankg=%d bank=%d column=%d",$time,q_out_temp[6],q_out_temp[9:7],q_out_temp[11:10],q_out_temp[17:12]);
+          $display("%t \t channel=%d PRE bankg=%d bank=%d ",$time,q_out_temp[6],q_out_temp[9:7],q_out_temp[11:10]);
+       end
+       if (q_out_temp[37:36] == 2) begin
+          $display("\t\t*********Write operation********* Value of operation=%0d",q_out_temp[37:36]);
+          $display("%t \t channel=%d ACT0 bankg=%d bank=%d row =%d",$time,q_out_temp[6],q_out_temp[9:7],q_out_temp[11:10],q_out_temp[33:18]);
+          $display("%t \t channel=%d ACT1 bankg=%d bank=%d row=%d",$time,q_out_temp[6],q_out_temp[9:7],q_out_temp[11:10],q_out_temp[33:18]);
+          $display("%t \t channel=%d WR0 bankg=%d bank=%d column=%d",$time,q_out_temp[6],q_out_temp[9:7],q_out_temp[11:10],q_out_temp[17:12]);
+          $display("%t \t channel=%d WR1 bankg=%d bank=%d column=%d",$time,q_out_temp[6],q_out_temp[9:7],q_out_temp[11:10],q_out_temp[17:12]);
+          $display("%t \t channel=%d REF bankg=%d bank=%d ",$time,q_out_temp[6],q_out_temp[9:7],q_out_temp[11:10]);
+       end 
   endtask
 
   task rem_from_mc_q;
        q_out_temp=q_mc[0];
-       $display("q_out_temp= %37h ",q_out_temp);
+       $display("q_out_temp= %0h ",q_out_temp);
        output_command(q_out_temp);
        q_mc.pop_front();
        dimm_count=0;
        $display(">>>@time:%t Removing a queue %h elements from queue..  sim_time = %0d --> q_mc.size = %0d\n",$time,q_out_temp, sim_time, q_mc.size());
        display_q;        
        last_line ++;
-       if (rowCounter+1==last_line)begin
+     /*  if (rowCounter+1==last_line)begin
           #1 $finish;
-       end
+       end*/
   endtask
 
   always@(sim_time) begin
@@ -84,8 +89,14 @@ module msd_dimm;
          if ((q_mc.size() != 0)||(q_full==1)) begin
             #1 dimm_count =2; 
             $display("dimm_count =%d", dimm_count);
-            wait (dimm_count==2);
             rem_from_mc_q;
+         end
+  end
+
+  always@(sim_time) begin
+         if ((q_ip_time.size() == 0) && (q_mc.size() ==0) && (q_full ==0) && (last_line !=0)) begin
+            // Both input queue and memory controller queue are empty
+            #1 $finish;
          end
   end 
         
@@ -133,7 +144,7 @@ module msd_dimm;
              if (valuesRead == 4) begin
                 if (debug_en) begin 
                    $display ( "from row %d the value of time =%d  core=%d operation=%d address=%h",rowCounter,time_unit,core,operation,address);
-             $fwrite(out_file,"from row %d the value of time =%d \t core=%d \t operation=%d \t address=%h \n",rowCounter,time_unit,core,operation,address);
+                   $fwrite(out_file,"from row %d the value of time =%d \t core=%d \t operation=%d \t address=%h \n",rowCounter,time_unit,core,operation,address);
                 end
                 rowCounter++;
              end 
@@ -144,6 +155,5 @@ module msd_dimm;
        q_ip_addr.pop_back();
        $fclose(traceFile);
        $fclose(out_file);
-       #100 $finish;
   end
 endmodule
